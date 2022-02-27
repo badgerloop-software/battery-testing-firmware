@@ -1,3 +1,5 @@
+typedef enum {idle, ready, error, testing, finish} state_t;
+
 void setup() {
   // put your setup code here, to run once:
 
