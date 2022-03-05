@@ -1,42 +1,67 @@
+// no clue what it's supposed to be
+#define BUTTON A0
+
 typedef enum {idle, ready, error, testing, finish} state_t;
-state_t currState;
+state_t state;
 
 void setup() {
-  // put your setup code here, to run once:
-  currState = idle;
+  pinMode(BUTTON, INPUT);
+
+  Serial.begin(115200);
+  while(!Serial) {}
+  Serial.println("Serial Connection established...");
+  state = idle;
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-  switch (currState) {
+  switch (state) {
     case idle:
-      currState = idleState();
+      state = idleState();
       break;
     case ready:
-      currState = readyState();
+      state = readyState();
       break;
     case error:
-      currState = errorState();
+      state = errorState();
       break;
     case testing:
-      currState = testingState();
+      state = testingState();
       break;
     case finish:
-      currState = finishState();
+      state = finishState();
       break;      
-
   }
 }
-state_t idleState() {
-  // Display "Insert Battery"
 
-  // return ready;
-  // return error;
+bool buttonPressed(void) {
+  // active high
+  return digitalRead(BUTTON);
+}
+
+unsigned char battCheck(void) {
+  // inserted correctly
+  return 0;
+  // inserted backward
+  return 1;
+  // not inserted
+  return 2;
+
+}
+
+state_t idleState(void) {
+  Serial.println("Insert Battery");
+
+  if (buttonPressed() && battCheck() == 0)
+    return ready;
+  else if (buttonPressed() && battCheck() == 1)
+    return error;
+
   return idle;
 }
 state_t readyState() {
   // Set parameters
-  // Display "Ready for Test"
+  Serial.println("Ready for Test");
 
   // return testing;
   return ready;
