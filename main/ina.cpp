@@ -84,31 +84,34 @@ void ina226_configure(uint8_t bus, uint8_t shunt, uint8_t average, uint8_t mode)
     i2c_write16(INA_I2C_ADDR, INA226_REG_CONFIGURATION, config);
 }
 
-void ina226_read(float *voltage, float *current, float *power, float *shunt_voltage) {
+void ina226_read(float *voltage, float *current, float *shunt_voltage) {
     uint16_t voltage_reg;
     int16_t current_reg, power_reg, shunt_reg;
 
     voltage_reg = i2c_read16(INA_I2C_ADDR, INA226_REG_BUS_VOLTAGE);
     current_reg = i2c_read16(INA_I2C_ADDR, INA226_REG_CURRENT);
-    power_reg = i2c_read16(INA_I2C_ADDR, INA226_REG_POWER);
     shunt_reg = i2c_read16(INA_I2C_ADDR, INA226_REG_SHUNT_VOLTAGE);
 
-    *voltage = (float) voltage_reg * .00125;
-    *current = (float) current_reg * 1000.0 * current_lsb;
-    *power = (float) power_reg * 25000.0 * current_lsb;
-    *shunt_voltage = (float) shunt_reg * .00235;
+    if (voltage)
+        *voltage = (float) voltage_reg * .00125;
+    
+    if (current)
+        *current = (float) current_reg * 1000.0 * current_lsb;
+    
+    if (shunt_voltage)
+        *shunt_voltage = (float) shunt_reg * .00235;
 }
 
 
 void ina226_reset() {
     i2c_write16(INA_I2C_ADDR, INA226_REG_CONFIGURATION, config = INA226_RESET);
 
-    ina226_calibrate(.1, 1.0);
+    ina226_calibrate(0.0195, 3.0);
     ina226_configure(INA226_TIME_8MS, INA226_TIME_8MS, INA226_AVERAGES_16, INA226_MODE_SHUNT_CONTINUOUS);   
 }
 
 void ina226_begin() {
     Wire.begin();
-    ina226_calibrate(.1, 1.0);
+    ina226_calibrate(0.0195, 3.0);
     ina226_configure(INA226_TIME_8MS, INA226_TIME_8MS, INA226_AVERAGES_16, INA226_MODE_SHUNT_CONTINUOUS);
 }
