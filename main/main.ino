@@ -1,3 +1,4 @@
+#include "ina.h"
 // no clue what it's supposed to be
 #define BUTTON A0
 
@@ -10,6 +11,7 @@ void setup() {
   Serial.begin(115200);
   while(!Serial) {}
   Serial.println("Serial Connection established...");
+  ina226_begin();
   state = idle;
 }
 
