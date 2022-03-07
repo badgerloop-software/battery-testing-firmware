@@ -1,12 +1,17 @@
 #include "ina.h"
 #include <math.h>
-// no clue what it's supposed to be
 #define BUTTON 8
 #define BATT_CHECK 0
 #define MCU_SET 3
 #define MCU_RELAY_EN 2
 #define MCU_CHRG_STAT 7
 #define MCU_CHRG_EN 13
+
+#define THERM_CHECKS 10
+#define THERM_1 A1
+#define THERM_2 A2
+#define THERM_3 A3
+
 #define ADC_SCALE (5.0 / 1023.0)
 #define ANALOG_WRITE_SCALE (5.0 / 255.0)
 
@@ -17,10 +22,13 @@
 #define DISCHARGE_BATT_VOLTAGE_LOW 0
 #define DISCHARGE_BATT_VOLTAGE_HIGH 5
 
+#define _AREAD(pin) ((float)(analogRead(pin)) * ADC_SCALE)
+
 typedef enum {idle, ready, error, testCharge, testDischarge, finish} state_t;
 state_t state;
-float shunt;
-float operating_current;
+float shunt = 0;
+float operating_current = 0;
+float voltage = 0;
 
 void setup() {
   pinMode(BUTTON, INPUT);
@@ -85,7 +93,7 @@ bool buttonPressed(void) {
 }
 
 unsigned char battCheck(float lower_bound, float upper_bound) {
-  float voltage = (float)(analogRead(BATT_CHECK)) * ADC_SCALE;
+  voltage = _AREAD(BATT_CHECK);
   if (voltage < lower_bound || voltage > upper_bound ) {
     return 1;
   }
@@ -143,19 +151,34 @@ state_t testChargeState(){
 state_t testDischargeState() {
   // set constant current (use MCU_SET voltage)
   set_operating_voltage(operating_current * shunt);
-  // check battery status (BAT_CHECK)
-  if(battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) != 0){
+  // check battery status (BATT_CHECK)
+  if(battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
     return error;
   }
   // switch relay to discharge
-  // monitor battery voltage
-  // monitor thermistor temperatures
+  digitalWrite(MCU_RELAY_EN, 1);
   // timer
+  int timer = 0;
+  // monitor battery voltage
   // stop test (switch off relay) when minimum voltage is reached
+  while (timer++ < THERM_CHECKS && battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
+    Serial.print(voltage);
+    Serial.println(" volts");
+  // monitor thermistor temperatures
+    Serial.println("| Thermistor temps:");
+    Serial.print("| 1) ");
+    Serial.println(_AREAD(THERM_1));
+    Serial.print("| 2) ");
+    Serial.println(_AREAD(THERM_2));
+    Serial.print("| 3) ");
+    Serial.println(_AREAD(THERM_3));
+    delay(1000);
+  }
+  digitalWrite(MCU_RELAY_EN, 0);
 
-  // return error;
-  // return finish;
-  return testDischarge;
+  if (timer < THERM_CHECKS)
+    return error;
+  return finish;
 }
 state_t finishState() {
   // Stop discharging, isolate cell
