@@ -107,7 +107,7 @@ state_t idleState(void) {
   if (battCheck(IDLE_BATT_VOLTAGE_LOW, IDLE_BATT_VOLTAGE_HIGH))
     return error;
   
-  if (buttonPressed())
+  if (voltage && buttonPressed())
     return ready;
 
   return idle;
@@ -140,7 +140,7 @@ state_t testChargeState(){
   digitalWrite(MCU_CHRG_EN, 1);
   // stop charging when MCU_CHRG_STAT is 0
   // by reading status of Orange LED
-  int s = start;
+  unsigned long s = start;
   while(millis()-s < 10000 && analogRead(MCU_CHRG_STAT) != 0) {}
   digitalWrite(MCU_CHRG_EN, 0);
 
@@ -156,11 +156,11 @@ state_t testDischargeState() {
   // switch relay to discharge
   digitalWrite(MCU_RELAY_EN, 1);
   // timer
-  int s = start;
+  unsigned long s = start;
   // monitor battery voltage
   // stop test (switch off relay) when minimum voltage is reached
   Serial.println("volts,therm1,therm2,therm3");
-  while (millis()-start < 15000 && battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
+  while (millis()-s < 15000 && battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
     Serial.print(voltage);
     Serial.print(", ");
     Serial.print(_AREAD(THERM_1));
