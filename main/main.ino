@@ -7,7 +7,6 @@
 #define MCU_CHRG_STAT 7
 #define MCU_CHRG_EN 13
 
-#define THERM_CHECKS 10
 #define THERM_1 A1
 #define THERM_2 A2
 #define THERM_3 A3
@@ -29,6 +28,7 @@ state_t state;
 float shunt = 0;
 float operating_current = 0;
 float voltage = 0;
+unsigned long start = 0;
 
 void setup() {
   pinMode(BUTTON, INPUT);
@@ -53,6 +53,7 @@ void loop() {
       state = idleState();
       break;
     case ready:
+      start = millis();
       state = readyState();
       break;
     case error:
@@ -70,10 +71,10 @@ void loop() {
   }
 }
 
-void set_operating_voltage(float voltage) {
+void set_operating_voltage(float v) {
   int val;
 
-  val = round(voltage / ANALOG_WRITE_SCALE);
+  val = round(v / ANALOG_WRITE_SCALE);
 
   analogWrite(MCU_SET, val);
 }
@@ -121,7 +122,7 @@ state_t readyState() {
 state_t errorState() {
   // Stop charge/Discharge. MCU_SET
   // Isolate Battery (switch relay). MCU_RELAY_EN
-  analogWrite(MCU_SET, 0); 
+  set_operating_voltage(0);
   digitalWrite(MCU_RELAY_EN, 0);
   
   // Display error message
@@ -131,22 +132,19 @@ state_t errorState() {
 }
 state_t testChargeState(){
   // Check battery
-  if(battCheck(CHARGE_BATT_VOLTAGE_LOW, CHARGE_BATT_VOLTAGE_HIGH) != 0){
+  if(battCheck(CHARGE_BATT_VOLTAGE_LOW, CHARGE_BATT_VOLTAGE_HIGH)){
     return error;
   }
   // Enable charging
   digitalWrite(MCU_RELAY_EN, 0);
   digitalWrite(MCU_CHRG_EN, 1);
   // stop charging when MCU_CHRG_STAT is 0
-  while(analogRead(MCU_CHRG_STAT) != 0){
-    
-  }
+  // by reading status of Orange LED
+  int s = start;
+  while(millis()-s < 10000 && analogRead(MCU_CHRG_STAT) != 0) {}
   digitalWrite(MCU_CHRG_EN, 0);
-  // Read status of Orange LED
- 
-  // return error;
-  // return finish; 
-  return testCharge;
+
+  return analogRead(MCU_CHRG_STAT) ? error : finish;
 }
 state_t testDischargeState() {
   // set constant current (use MCU_SET voltage)
@@ -158,33 +156,42 @@ state_t testDischargeState() {
   // switch relay to discharge
   digitalWrite(MCU_RELAY_EN, 1);
   // timer
-  int timer = 0;
+  int s = start;
   // monitor battery voltage
   // stop test (switch off relay) when minimum voltage is reached
-  while (timer++ < THERM_CHECKS && battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
+  Serial.println("volts,therm1,therm2,therm3");
+  while (millis()-start < 15000 && battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
     Serial.print(voltage);
-    Serial.println(" volts");
-  // monitor thermistor temperatures
-    Serial.println("| Thermistor temps:");
-    Serial.print("| 1) ");
-    Serial.println(_AREAD(THERM_1));
-    Serial.print("| 2) ");
-    Serial.println(_AREAD(THERM_2));
-    Serial.print("| 3) ");
+    Serial.print(", ");
+    Serial.print(_AREAD(THERM_1));
+    Serial.print(", ");
+    Serial.print(_AREAD(THERM_2));
+    Serial.print(", ");
     Serial.println(_AREAD(THERM_3));
-    delay(1000);
+    delay(300);
   }
   digitalWrite(MCU_RELAY_EN, 0);
 
-  if (timer < THERM_CHECKS)
+  if (voltage >= DISCHARGE_BATT_VOLTAGE_HIGH)
     return error;
   return finish;
 }
 state_t finishState() {
   // Stop discharging, isolate cell
+  set_operating_voltage(0);
+  digitalWrite(MCU_RELAY_EN, 0);
   // Stop collecting data, close/store csv file
   // Display End messsage and/or ending parameters (V, time, etc)
+  Serial.println("'EOF'");
+  Serial.print(voltage);
+  Serial.print("v  Runtime ");
+  Serial.print(millis()-start);
+  Serial.println("s");
 
-  // return idle;
-  return finish;
+  delay(3000);
+  while (battCheck(IDLE_BATT_VOLTAGE_LOW, IDLE_BATT_VOLTAGE_LOW)) {
+    Serial.println("Remove battery");
+    delay(1000);
+  } 
+  return idle;
 }
