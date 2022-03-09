@@ -28,10 +28,27 @@ state_t state;
 float shunt = 0;
 float operating_current = 0;
 float voltage = 0;
-unsigned long start = 0;
 inline void _LOG(char str[]) {
-  Serial.print(state);
-  Serial.print(": ");
+  switch(state) {
+    case idle:
+      Serial.print("IDLE: ");
+      break;
+    case ready:
+      Serial.print("READY: ");
+      break;
+    case error:
+      Serial.print("ERROR: ");
+      break;
+    case testCharge:
+      Serial.print("TEST CHARGE: ");
+      break;
+    case testDischarge:
+      Serial.print("TEST DISCHARGE: ");
+      break;
+    case finish:
+      Serial.print("FINISH: ");
+      break;
+  }
   Serial.println(str);
 }
 
@@ -58,7 +75,6 @@ void loop() {
       state = idleState();
       break;
     case ready:
-      start = millis();
       state = readyState();
       break;
     case error:
@@ -117,6 +133,9 @@ state_t idleState(void) {
 }
 state_t readyState() {
   // Set parameters
+  if (Serial.available() > 0) {
+    //uint8_t byte = Serial.read();
+  }
 
   // return testing;
   return ready;
@@ -142,7 +161,7 @@ state_t testChargeState(){
   digitalWrite(MCU_CHRG_EN, 1);
   // stop charging when MCU_CHRG_STAT is 0
   // by reading status of Orange LED
-  while(analogRead(MCU_CHRG_STAT) != 0) {}
+  while(analogRead(MCU_CHRG_STAT)) {}
 
   digitalWrite(MCU_CHRG_EN, 0);
 
@@ -158,19 +177,23 @@ state_t testDischargeState() {
   // switch relay to discharge
   digitalWrite(MCU_RELAY_EN, 1);
   // timer
-  unsigned long s = millis();
   // monitor battery voltage
   // stop test (switch off relay) when minimum voltage is reached
+  unsigned long loop_time = millis();
+  unsigned long msg_time = loop_time;
+  unsigned long curr_time;
   Serial.println("volts,therm1,therm2,therm3");
-  while (millis()-s < DISCHARGE_TIME && battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
-    Serial.print(voltage);
-    Serial.print(", ");
-    Serial.print(_AREAD(THERM_1));
-    Serial.print(", ");
-    Serial.print(_AREAD(THERM_2));
-    Serial.print(", ");
-    Serial.println(_AREAD(THERM_3));
-    delay(300);
+  while ((curr_time = millis())-loop_time < DISCHARGE_TIME && battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
+    if (curr_time-msg_time > 60000) {
+      Serial.print(voltage);
+      Serial.print(", ");
+      Serial.print(_AREAD(THERM_1));
+      Serial.print(", ");
+      Serial.print(_AREAD(THERM_2));
+      Serial.print(", ");
+      Serial.println(_AREAD(THERM_3));
+      msg_time = curr_time;
+    }
   }
   digitalWrite(MCU_RELAY_EN, 0);
   Serial.println("'EOF'");
@@ -183,14 +206,7 @@ state_t finishState() {
   // Stop discharging, isolate cell
   set_operating_voltage(0);
   digitalWrite(MCU_RELAY_EN, 0);
-  // Stop collecting data, close/store csv file
-  // Display End messsage and/or ending parameters (V, time, etc)
-  Serial.print(voltage);
-  Serial.print("v  Runtime ");
-  Serial.print(millis()-start);
-  Serial.println("s");
 
-  delay(3000);
   while (battCheck(IDLE_BATT_VOLTAGE_LOW, IDLE_BATT_VOLTAGE_LOW)) {
     delay(1000);
   } 
