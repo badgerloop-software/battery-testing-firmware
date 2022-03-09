@@ -20,15 +20,20 @@
 #define CHARGE_BATT_VOLTAGE_HIGH 5
 #define DISCHARGE_BATT_VOLTAGE_LOW 0
 #define DISCHARGE_BATT_VOLTAGE_HIGH 5
+#define DISCHARGE_TIME 1500000
 
 #define _AREAD(pin) ((float)(analogRead(pin)) * ADC_SCALE)
-
 typedef enum {idle, ready, error, testCharge, testDischarge, finish} state_t;
 state_t state;
 float shunt = 0;
 float operating_current = 0;
 float voltage = 0;
 unsigned long start = 0;
+inline void _LOG(char str[]) {
+  Serial.print(state);
+  Serial.print(": ");
+  Serial.println(str);
+}
 
 void setup() {
   pinMode(BUTTON, INPUT);
@@ -40,10 +45,10 @@ void setup() {
 
   Serial.begin(115200);
   while(!Serial) {}
-  Serial.println("Serial Connection established...");
+  state = idle;
+  _LOG("Serial Connection established...");
   ina226_begin();
   shunt = calibrate_shunt();
-  state = idle;
 }
 
 void loop() {
@@ -102,8 +107,6 @@ unsigned char battCheck(float lower_bound, float upper_bound) {
 }
 
 state_t idleState(void) {
-  Serial.println("Insert Battery");
-
   if (battCheck(IDLE_BATT_VOLTAGE_LOW, IDLE_BATT_VOLTAGE_HIGH))
     return error;
   
@@ -114,7 +117,6 @@ state_t idleState(void) {
 }
 state_t readyState() {
   // Set parameters
-  Serial.println("Ready for Test");
 
   // return testing;
   return ready;
@@ -126,7 +128,7 @@ state_t errorState() {
   digitalWrite(MCU_RELAY_EN, 0);
   
   // Display error message
-  Serial.println("error");
+  _LOG("ERROR");
   
   return error;
 }
@@ -140,8 +142,8 @@ state_t testChargeState(){
   digitalWrite(MCU_CHRG_EN, 1);
   // stop charging when MCU_CHRG_STAT is 0
   // by reading status of Orange LED
-  unsigned long s = start;
-  while(millis()-s < 10000 && analogRead(MCU_CHRG_STAT) != 0) {}
+  while(analogRead(MCU_CHRG_STAT) != 0) {}
+
   digitalWrite(MCU_CHRG_EN, 0);
 
   return analogRead(MCU_CHRG_STAT) ? error : finish;
@@ -156,11 +158,11 @@ state_t testDischargeState() {
   // switch relay to discharge
   digitalWrite(MCU_RELAY_EN, 1);
   // timer
-  unsigned long s = start;
+  unsigned long s = millis();
   // monitor battery voltage
   // stop test (switch off relay) when minimum voltage is reached
   Serial.println("volts,therm1,therm2,therm3");
-  while (millis()-s < 15000 && battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
+  while (millis()-s < DISCHARGE_TIME && battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
     Serial.print(voltage);
     Serial.print(", ");
     Serial.print(_AREAD(THERM_1));
@@ -171,6 +173,7 @@ state_t testDischargeState() {
     delay(300);
   }
   digitalWrite(MCU_RELAY_EN, 0);
+  Serial.println("'EOF'");
 
   if (voltage >= DISCHARGE_BATT_VOLTAGE_HIGH)
     return error;
@@ -182,7 +185,6 @@ state_t finishState() {
   digitalWrite(MCU_RELAY_EN, 0);
   // Stop collecting data, close/store csv file
   // Display End messsage and/or ending parameters (V, time, etc)
-  Serial.println("'EOF'");
   Serial.print(voltage);
   Serial.print("v  Runtime ");
   Serial.print(millis()-start);
@@ -190,7 +192,6 @@ state_t finishState() {
 
   delay(3000);
   while (battCheck(IDLE_BATT_VOLTAGE_LOW, IDLE_BATT_VOLTAGE_LOW)) {
-    Serial.println("Remove battery");
     delay(1000);
   } 
   return idle;
