@@ -1,5 +1,6 @@
 #include "ina.h"
 #include <math.h>
+#include <string.h>
 #define BUTTON 8
 #define BATT_CHECK 0
 #define MCU_SET 3
@@ -63,7 +64,6 @@ void setup() {
   Serial.begin(115200);
   while(!Serial) {}
   state = idle;
-  _LOG("Serial Connection established...");
   ina226_begin();
   shunt = calibrate_shunt();
 }
@@ -123,21 +123,49 @@ unsigned char battCheck(float lower_bound, float upper_bound) {
 }
 
 state_t idleState(void) {
-  if (battCheck(IDLE_BATT_VOLTAGE_LOW, IDLE_BATT_VOLTAGE_HIGH))
+  calibrate_shunt();
+  if (battCheck(IDLE_BATT_VOLTAGE_LOW, IDLE_BATT_VOLTAGE_HIGH)) {
+    Serial.println("error:idle");
     return error;
+  }
   
-  if (voltage && buttonPressed())
+  if (voltage && buttonPressed()) {
+    Serial.println("ready");
     return ready;
+  }
 
   return idle;
 }
 state_t readyState() {
+  calibrate_shunt();
   // Set parameters
+
+  // starttest,testerid,battid,current
   if (Serial.available() > 0) {
-    //uint8_t byte = Serial.read();
+    String resp = Serial.readStringUntil('\0');
+    char cpy[resp.length()];
+    strcpy(cpy, resp.c_str());
+    char *val = strtok(cpy, ",");
+    if (strcmp(val, "starttest") != 0) {
+      return ready;
+    }
+    int i = 0;
+    while (val != NULL) {
+        if (i == 2) {
+          operating_current = String(val).toFloat();
+          if (operating_current > 0.0) {
+            Serial.println("charge");
+            return testCharge;
+          }
+          Serial.println("error");
+          return error;
+        }
+      val = strtok(NULL, ",");
+      i++;
+    }
+    
   }
 
-  // return testing;
   return ready;
 }
 state_t errorState() {
@@ -147,13 +175,35 @@ state_t errorState() {
   digitalWrite(MCU_RELAY_EN, 0);
   
   // Display error message
-  _LOG("ERROR");
+  if (Serial.available() > 0) {
+    String resp = Serial.readStringUntil('\n');
+    if (resp.substring(0, 6) == "resume:") {
+      if (resp.substring(6) == "idle") {
+        Serial.println("idle");
+        return idle;
+      }
+      if (resp.substring(6) == "ready") {
+        Serial.println("ready");
+        return ready;
+      }
+      if (resp.substring(6) == "charge") {
+        Serial.println("charge");
+        return testCharge;
+      }
+      if (resp.substring(6) == "discharge") {
+        Serial.println("discharge");
+        return testDischarge;
+      }
+    }
+  }
   
   return error;
 }
 state_t testChargeState(){
+  calibrate_shunt(); //is this allowed?
   // Check battery
   if(battCheck(CHARGE_BATT_VOLTAGE_LOW, CHARGE_BATT_VOLTAGE_HIGH)){
+    Serial.println("error");
     return error;
   }
   // Enable charging
@@ -161,17 +211,28 @@ state_t testChargeState(){
   digitalWrite(MCU_CHRG_EN, 1);
   // stop charging when MCU_CHRG_STAT is 0
   // by reading status of Orange LED
-  while(analogRead(MCU_CHRG_STAT)) {}
+  while(analogRead(MCU_CHRG_STAT)) {
+    if(battCheck(CHARGE_BATT_VOLTAGE_LOW, CHARGE_BATT_VOLTAGE_HIGH)){
+      Serial.println("error");
+      return error;
+    }
+  }
 
   digitalWrite(MCU_CHRG_EN, 0);
-
-  return analogRead(MCU_CHRG_STAT) ? error : finish;
+  
+  if (analogRead(MCU_CHRG_STAT)) {
+    Serial.println("error");
+    return error;
+  }
+  Serial.println("discharge");
+  return testDischarge;
 }
 state_t testDischargeState() {
   // set constant current (use MCU_SET voltage)
   set_operating_voltage(operating_current * shunt);
   // check battery status (BATT_CHECK)
   if(battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
+    Serial.println("error");
     return error;
   }
   // switch relay to discharge
@@ -182,24 +243,26 @@ state_t testDischargeState() {
   unsigned long loop_time = millis();
   unsigned long msg_time = loop_time;
   unsigned long curr_time;
-  Serial.println("volts,therm1,therm2,therm3");
   while ((curr_time = millis())-loop_time < DISCHARGE_TIME && battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
     if (curr_time-msg_time > 60000) {
       Serial.print(voltage);
-      Serial.print(", ");
+      Serial.print(",");
       Serial.print(_AREAD(THERM_1));
-      Serial.print(", ");
+      Serial.print(",");
       Serial.print(_AREAD(THERM_2));
-      Serial.print(", ");
+      Serial.print(",");
       Serial.println(_AREAD(THERM_3));
       msg_time = curr_time;
     }
   }
   digitalWrite(MCU_RELAY_EN, 0);
-  Serial.println("'EOF'");
 
-  if (voltage >= DISCHARGE_BATT_VOLTAGE_HIGH)
+  if (voltage >= DISCHARGE_BATT_VOLTAGE_HIGH) {
+    Serial.println("error");
     return error;
+  }
+
+  Serial.println("finish");
   return finish;
 }
 state_t finishState() {
