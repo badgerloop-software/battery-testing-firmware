@@ -1,6 +1,9 @@
 #include "ina.h"
 #include <math.h>
 #include <string.h>
+
+#define TESTER_ID 0
+
 #define BUTTON 8
 #define BATT_CHECK 0
 #define MCU_SET 3
@@ -127,6 +130,16 @@ state_t idleState(void) {
   if (battCheck(IDLE_BATT_VOLTAGE_LOW, IDLE_BATT_VOLTAGE_HIGH)) {
     Serial.println("error:idle");
     return error;
+  }
+
+
+  // receive/send ping from/to controller
+  if (Serial.available() > 0) {
+    String message = readSerial();
+    if (message.contains("tester")) {
+      Serial.print("yes,");
+      Serial.println(TESTER_ID);
+    }
   }
   
   if (voltage && buttonPressed()) {
