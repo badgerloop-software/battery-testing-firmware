@@ -132,13 +132,12 @@ state_t idleState(void) {
     return error;
   }
 
-
   // receive/send ping from/to controller
   if (Serial.available() > 0) {
     String message = Serial.readString();
-    if (message.indexOf("tester") > 0) {
+    if (message.indexOf("tester") != -1) {
       Serial.print("yes,");
-      Serial.println(TESTER_ID);
+      Serial.print(TESTER_ID);
     }
   }
   
@@ -153,7 +152,7 @@ state_t readyState() {
   calibrate_shunt();
   // Set parameters
 
-  // starttest,testerid,battid,current
+  // starttest,current
   if (Serial.available() > 0) {
     String resp = Serial.readStringUntil('\0');
     char cpy[resp.length()];
@@ -162,21 +161,16 @@ state_t readyState() {
     if (strcmp(val, "starttest") != 0) {
       return ready;
     }
-    int i = 0;
-    while (val != NULL) {
-        if (i == 2) {
-          operating_current = String(val).toFloat();
-          if (operating_current > 0.0) {
-            Serial.println("charge");
-            return testCharge;
-          }
-          Serial.println("error");
-          return error;
-        }
-      val = strtok(NULL, ",");
-      i++;
-    }
     
+    val = strtok(NULL, ",");
+    operating_current = String(val).toFloat();
+    if (operating_current > 0.0) {
+      Serial.println("charge");
+      delay(500); // Delay so that the app doesn't read this and potential error in next state as one serial message
+      return testCharge;
+    }
+    Serial.println("error");
+    return error;
   }
 
   return ready;
@@ -190,20 +184,20 @@ state_t errorState() {
   // Display error message
   if (Serial.available() > 0) {
     String resp = Serial.readStringUntil('\n');
-    if (resp.substring(0, 6) == "resume:") {
-      if (resp.substring(6) == "idle") {
+    if (resp.substring(0, 7) == "resume:") {
+      if (resp.substring(7) == "idle") {
         Serial.println("idle");
         return idle;
       }
-      if (resp.substring(6) == "ready") {
+      if (resp.substring(7) == "ready") {
         Serial.println("ready");
         return ready;
       }
-      if (resp.substring(6) == "charge") {
+      if (resp.substring(7) == "charge") {
         Serial.println("charge");
         return testCharge;
       }
-      if (resp.substring(6) == "discharge") {
+      if (resp.substring(7) == "discharge") {
         Serial.println("discharge");
         return testDischarge;
       }
@@ -230,7 +224,7 @@ state_t testChargeState(){
       return error;
     }
   }
-
+  
   digitalWrite(MCU_CHRG_EN, 0);
   
   if (analogRead(MCU_CHRG_STAT)) {
@@ -238,6 +232,7 @@ state_t testChargeState(){
     return error;
   }
   Serial.println("discharge");
+  delay(500); // Delay so that the app doesn't read this and potential error in next state as one serial message
   return testDischarge;
 }
 state_t testDischargeState() {
@@ -258,13 +253,14 @@ state_t testDischargeState() {
   unsigned long curr_time;
   while ((curr_time = millis())-loop_time < DISCHARGE_TIME && battCheck(DISCHARGE_BATT_VOLTAGE_LOW, DISCHARGE_BATT_VOLTAGE_HIGH)) {
     if (curr_time-msg_time > 60000) {
-      Serial.print(voltage);
+      Serial.print(voltage, 10); // TODO Replace 10 with whatever precision we want
       Serial.print(",");
-      Serial.print(_AREAD(THERM_1));
+      Serial.print(_AREAD(THERM_1), 10); // TODO Replace 10 with whatever precision we want
       Serial.print(",");
-      Serial.print(_AREAD(THERM_2));
+      Serial.print(_AREAD(THERM_2), 10); // TODO Replace 10 with whatever precision we want
       Serial.print(",");
-      Serial.println(_AREAD(THERM_3));
+      Serial.println(_AREAD(THERM_3), 10); // TODO Replace 10 with whatever precision we want
+      
       msg_time = curr_time;
     }
   }
@@ -275,6 +271,7 @@ state_t testDischargeState() {
     return error;
   }
 
+  delay(500); // Delay to prevent finish from being read as part of the last line of the csv file
   Serial.println("finish");
   return finish;
 }
@@ -283,8 +280,10 @@ state_t finishState() {
   set_operating_voltage(0);
   digitalWrite(MCU_RELAY_EN, 0);
 
+  // TODO Note: The app automatically transitions into the idle state, so any time spent here in the finish state won't be indicated on the app (though currently, the app can't effectively display that the tester is in the finish state anyway)
+  //            It might be worth using the LEDs on the board to show that the tester is in the finish state
   while (battCheck(IDLE_BATT_VOLTAGE_LOW, IDLE_BATT_VOLTAGE_LOW)) {
     delay(1000);
-  } 
+  }
   return idle;
 }
