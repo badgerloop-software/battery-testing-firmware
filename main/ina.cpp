@@ -1,9 +1,10 @@
 #include <Wire.h>
 #include <math.h>
+#include "ina.h"
 
 #define INA226_RESET 0x8000
 
-#define INA_I2C_ADDR    0x40
+#define INA_I2C_ADDR    0x50
 #define INA226_REG_CONFIGURATION    0x00
 #define INA226_REG_SHUNT_VOLTAGE    0x01
 #define INA226_REG_BUS_VOLTAGE      0x02
@@ -106,12 +107,12 @@ void ina226_read(float *voltage, float *current, float *shunt_voltage) {
 void ina226_reset() {
     i2c_write16(INA_I2C_ADDR, INA226_REG_CONFIGURATION, config = INA226_RESET);
 
-    ina226_calibrate(0.0195, 3.0);
+    ina226_calibrate(SHUNT_RES, 3.0);
     ina226_configure(INA226_TIME_8MS, INA226_TIME_8MS, INA226_AVERAGES_16, INA226_MODE_SHUNT_CONTINUOUS);   
 }
 
 void ina226_begin() {
     Wire.begin();
-    ina226_calibrate(0.0195, 3.0);
+    ina226_calibrate(SHUNT_RES, 3.0);
     ina226_configure(INA226_TIME_8MS, INA226_TIME_8MS, INA226_AVERAGES_16, INA226_MODE_SHUNT_CONTINUOUS);
 }
